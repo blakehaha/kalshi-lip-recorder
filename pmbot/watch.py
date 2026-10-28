@@ -15,8 +15,11 @@ Sources:
           IPO markets resolve on S-1 effectiveness, the 424B4, or an exchange
           listing approval.
   hf      New Hugging Face model repos from named orgs.
-  page    Any URL; fires when the page's text changes (arena.ai leaderboard,
-          lab news pages). Crude, but needs no per-site parser.
+  rss     New entries in an RSS/Atom feed (openai.com/news/rss.xml).
+  arena   The #1 model on LMArena's published leaderboard dataset; fires when
+          the leader changes. About a day behind arena.ai, which blocks bots.
+  page    Any URL; fires when the page's text changes. Crude, but needs no
+          per-site parser.
 
 The first poll of each source only primes its "seen" set: nothing fires for
 items that were already there at startup.
@@ -48,13 +51,17 @@ UA = os.environ.get("PMBOT_UA") or "pmbot-watch/0.1 research"
 IPO_FORMS = ("S-1", "S-1/A", "F-1", "F-1/A", "424B4", "EFFECT", "DRS", "DRS/A")
 
 
-def fetch(url: str, params: dict | None = None, timeout: float = 15, raw: bool = False, ua: str = UA):
+def fetch(url: str, params: dict | None = None, timeout: float = 15, raw: bool = False, ua: str = UA,
+          binary: bool = False):
     q = {k: v for k, v in (params or {}).items() if v is not None}
     if q:
         url += "?" + urllib.parse.urlencode(q, doseq=True)
-    req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": "*/*" if raw else "application/json"})
+    plain = raw or binary
+    req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": "*/*" if plain else "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         body = r.read()
+    if binary:
+        return body
     return body.decode(errors="replace") if raw else json.loads(body)
 
 
@@ -171,6 +178,84 @@ class PageSource(Source):
         return {h: {"url": self.url, "chars": len(text), "head": text[:300]}}
 
 
+class RSSSource(Source):
+    """One signal per new feed entry (RSS <item> or Atom <entry>)."""
+
+    def __init__(self, url: str, events: list[str], every_s: float = 60):
+        super().__init__(events, every_s)
+        self.url = url
+        self.name = "rss:" + url
+
+    def items(self) -> dict[str, dict]:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(fetch(self.url, raw=True))
+        out = {}
+        for el in root.iter():
+            tag = el.tag.rsplit("}", 1)[-1]
+            if tag not in ("item", "entry"):
+                continue
+            kid = {c.tag.rsplit("}", 1)[-1]: c for c in el}
+            link = kid.get("link")
+            href = (link.get("href") or link.text or "").strip() if link is not None else ""
+            key = (kid["guid"].text if "guid" in kid else None) or (kid["id"].text if "id" in kid else None) or href
+            text = lambda k: (kid[k].text or "").strip() if k in kid else ""
+            out[key.strip()] = {"title": text("title"), "link": href,
+                                "published": text("pubDate") or text("published") or text("updated")}
+        return out
+
+
+ARENA_DATASET = "lmarena-ai/leaderboard-dataset"
+
+
+class ArenaHFSource(Source):
+    """#1 on an Arena leaderboard, read from LMArena's published Hugging Face
+    dataset (arena.ai itself sits behind a Cloudflare challenge). The dataset is
+    refreshed about daily, roughly a day behind the site, so this tracks state,
+    not speed. Fires only when the leader changes. `text` is the raw board
+    (Style Control Off), which the "#1 AI model" markets settle on."""
+
+    def __init__(self, events: list[str], subset: str = "text", category: str = "overall", every_s: float = 300):
+        super().__init__(events, every_s)
+        self.subset, self.category = subset, category
+        self.name = f"arena:{subset}/{category}"
+        self._modified = None
+        self._leader = None
+
+    def board(self):
+        import io
+
+        import pandas as pd
+        url = f"https://huggingface.co/datasets/{ARENA_DATASET}/resolve/main/{self.subset}/latest-00000-of-00001.parquet"
+        df = pd.read_parquet(io.BytesIO(fetch(url, binary=True, timeout=60)))
+        board = df[df["category"] == self.category]
+        if board.empty:
+            raise ValueError(f"no category {self.category!r}; have {sorted(df['category'].unique())[:30]}")
+        df = board
+        # market tie rule: rank first, then the higher score
+        return df.sort_values(["rank", "rating"], ascending=[True, False])
+
+    def poll(self, now: float) -> list[dict]:
+        if now < self.next_at:
+            return []
+        self.next_at = now + self.every_s
+        modified = fetch(f"https://huggingface.co/api/datasets/{ARENA_DATASET}").get("lastModified")
+        if modified == self._modified:
+            return []
+        b = self.board()
+        self._modified = modified
+        top = b.head(3)
+        leader = f"{top.iloc[0]['organization']}|{top.iloc[0]['model_name']}"
+        item = {"id": f"{top.iloc[0]['leaderboard_publish_date']}|{leader}", "leader": leader,
+                "published": str(top.iloc[0]["leaderboard_publish_date"]),
+                "gap_to_2nd": float(top.iloc[0]["rating"] - top.iloc[1]["rating"]) if len(top) > 1 else None,
+                "top3": [f"{r.organization}|{r.model_name}|{r.rating:.1f}" for r in top.itertuples()]}
+        prev, self._leader = self._leader, leader
+        if prev is None:
+            log.info("%s primed: %s", self.name, item["top3"])
+            return []
+        return [item] if leader != prev else []
+
+
 def build_sources(cfg: dict) -> list[Source]:
     out: list[Source] = []
     for s in cfg.get("sources", []):
@@ -182,6 +267,10 @@ def build_sources(cfg: dict) -> list[Source]:
             out.append(HFSource(s["authors"], ev, **kw))
         elif s["type"] == "page":
             out.append(PageSource(s["url"], ev, **kw))
+        elif s["type"] == "rss":
+            out.append(RSSSource(s["url"], ev, **kw))
+        elif s["type"] == "arena":
+            out.append(ArenaHFSource(ev, s.get("subset", "text"), s.get("category", "overall"), **kw))
         else:
             raise ValueError(f"unknown source type {s['type']!r}")
     return out

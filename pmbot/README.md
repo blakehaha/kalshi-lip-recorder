@@ -9,9 +9,9 @@
 | Source | Markets | Why |
 |---|---|---|
 | SEC EDGAR full-text search, filtered by filer (`entityName`) | IPO markets: `2026ipos`, `anthropic`, `openai` | Resolve on S-1 effectiveness (EFFECT), the 424B4, or an exchange listing approval. All are indexed. |
-| `arena.ai/leaderboard/text/overall-no-style-control` | "#1 AI model" markets | The named resolution source |
+| LMArena's leaderboard dataset on Hugging Face (`text`, overall and coding) | "#1 AI model" and "#1 coding model" markets | arena.ai is the named source but blocks bots (Cloudflare). The dataset is the same board, published about a day later. Fires only when #1 changes. |
 | Hugging Face new repos by lab | AI model markets | Open-weight launches show up here first |
-| anthropic.com/news, openai.com/news | "Claude 6 / GPT-x released" | Resolve on the lab's own release |
+| anthropic.com/news (page), openai.com/news/rss.xml | "Claude 6 / GPT-x released" | Resolve on the lab's own release |
 
 Edit `watchlist.json` to add sources. `deploy/pmbot-watch.service` runs the watcher under systemd. Set `PMBOT_UA="pmbot you@example.com"`, because the SEC asks for a contact in the User-Agent.
 
@@ -51,4 +51,4 @@ The Polymarket US Liquidity Incentive Program pays for resting size near the top
 
 ## Network
 
-The cloud environment needs these hosts allowed: `gateway.polymarket.us`, `api.polymarket.us`, `docs.polymarket.us`, `efts.sec.gov`, `huggingface.co`, `arena.ai`, `www.anthropic.com`, `openai.com`. Unreachable sources log a warning and are skipped.
+The cloud environment needs these hosts allowed: `gateway.polymarket.us`, `api.polymarket.us`, `docs.polymarket.us`, `efts.sec.gov`, `huggingface.co` (plus its file CDN, `*.hf.co`, for the leaderboard parquet), `www.anthropic.com`, `openai.com`. Unreachable sources log a warning and are skipped.

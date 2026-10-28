@@ -74,3 +74,43 @@ def test_tick_logs_signal_with_books_and_prices(tmp_path):
     assert row["books"] == [{"slug": "anthropic-yes", "bid": 0.86, "ask": 0.87}]
     (prices,) = tmp_path.glob("prices-*.jsonl")
     assert json.loads(prices.read_text().splitlines()[0])["slug"] == "anthropic-yes"
+
+
+RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>OpenAI News</title>
+<item><title>Introducing GPT Astra 6.1</title><link>https://openai.com/index/astra-6-1/</link>
+<guid isPermaLink="false">astra-6-1</guid><pubDate>Thu, 29 Oct 2026 17:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+ATOM = """<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>tag:x,1</id><title>Claude 6</title>
+<link href="https://www.anthropic.com/news/claude-6"/><updated>2026-10-29T17:00:00Z</updated></entry></feed>"""
+
+
+def test_rss_and_atom_items(monkeypatch):
+    from pmbot.watch import RSSSource
+    monkeypatch.setattr(watch, "fetch", lambda *a, **k: RSS)
+    assert RSSSource("u", []).items() == {"astra-6-1": {
+        "title": "Introducing GPT Astra 6.1", "link": "https://openai.com/index/astra-6-1/",
+        "published": "Thu, 29 Oct 2026 17:00:00 GMT"}}
+    monkeypatch.setattr(watch, "fetch", lambda *a, **k: ATOM)
+    assert RSSSource("u", []).items()["tag:x,1"]["link"] == "https://www.anthropic.com/news/claude-6"
+
+
+def test_arena_fires_only_on_leader_change(monkeypatch):
+    import pandas as pd
+    from pmbot.watch import ArenaHFSource
+
+    boards = iter([
+        [("Google", "gemini-3.5-pro", 1, 1510.0), ("Anthropic", "claude-opus-5-5", 1, 1508.0)],
+        [("Google", "gemini-3.5-pro", 1, 1511.0), ("Anthropic", "claude-opus-5-5", 2, 1500.0)],
+        [("Anthropic", "claude-6", 1, 1530.0), ("Google", "gemini-3.5-pro", 2, 1511.0)],
+    ])
+    modified = iter(["d1", "d1", "d2", "d3"])
+    monkeypatch.setattr(watch, "fetch", lambda *a, **k: {"lastModified": next(modified)})
+    s = ArenaHFSource(["company1-2026-12-31"], every_s=0)
+    s.board = lambda: pd.DataFrame(next(boards), columns=["organization", "model_name", "rank", "rating"]).assign(
+        leaderboard_publish_date="2026-10-28").sort_values(["rank", "rating"], ascending=[True, False])
+    assert s.poll(0) == []              # primes: Google leads (rank tie broken by score)
+    assert s.poll(1) == []              # dataset unchanged, board not even fetched
+    assert s.poll(2) == []              # same leader
+    (sig,) = s.poll(3)
+    assert sig["leader"] == "Anthropic|claude-6" and sig["gap_to_2nd"] == 19.0
