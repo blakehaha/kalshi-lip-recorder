@@ -1,14 +1,12 @@
 """Polymarket US request signing.
 
-Per the Polymarket US authentication docs (summarized; the page wasn't
-reachable from the environment this was written in, so check the official
-Python example there before going live):
-  - Ed25519 over  timestamp_ms + METHOD + path  (no query string, no body).
+Per docs.polymarket.us/api-reference/authentication:
+  - Ed25519 over  timestamp_ms + METHOD + path, no body. The docs don't say
+    whether a query string is signed; this drops it, as Kalshi does.
   - The secret from polymarket.us/developer is base64, 64 bytes; the first 32
     are the Ed25519 private key seed.
   - Headers: access key id, timestamp (ms), base64 signature. Timestamp must
     be within 30 s of server time.
-Header NAMES below are placeholders until confirmed against the docs.
 """
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ import time
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-HDR_KEY, HDR_TS, HDR_SIG = "X-PM-Access-Key", "X-PM-Timestamp", "X-PM-Signature"  # UNVERIFIED names
+HDR_KEY, HDR_TS, HDR_SIG = "X-PM-Access-Key", "X-PM-Timestamp", "X-PM-Signature"
 
 
 class Signer:

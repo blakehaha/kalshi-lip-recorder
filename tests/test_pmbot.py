@@ -6,22 +6,33 @@ from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat
 
 from pmbot.auth import HDR_SIG, HDR_TS, Signer
 from pmbot.backtest import fill_pnl
-from pmbot.scoring import quote_share, score_side, within_max_spread
+from pmbot.scoring import book_pays, quote_share, score_side
 from pmbot.strategy import Limits, MarketState, Params, Quote, allocate, evaluate, killed
 
 
 def test_docs_worked_example():
-    # discount 0.30: 1,000 three ticks back scores 27; 1,000 at each of 0..3 ticks -> best holds 70.6%.
-    r = score_side([(0.50, 1000), (0.49, 1000), (0.48, 1000), (0.47, 1000)], target_size=100, discount=0.3)
+    # discount 0.30: 1,000 at each of 0..3 ticks -> 1000+300+90+27; best holds 70.6%.
+    r = score_side([(0.50, 1000), (0.49, 1000), (0.48, 1000), (0.47, 1000)], target_size=4000, discount=0.3)
     assert r.score == pytest.approx(1417)
-    assert quote_share([(0.49, 1000), (0.48, 1000), (0.47, 1000)], 0.50, 1000, 100, 0.3) == pytest.approx(1000 / 1417)
+    assert quote_share([(0.49, 1000), (0.48, 1000), (0.47, 1000)], 0.50, 1000, 4000, 0.3) == pytest.approx(1000 / 1417)
+    # asks walk upward from the best ask
+    a = score_side([(0.53, 1000), (0.51, 1000)], target_size=2000, discount=0.3, asks=True)
+    assert a.best == 0.51 and a.size_adjusted == 0.53 and a.score == pytest.approx(1000 + 90)
 
 
-def test_below_target_scores_nothing_and_size_adjusted_price():
-    assert score_side([(0.40, 50)], target_size=100, discount=0.5).score == 0
-    r = score_side([(0.40, 60), (0.38, 60)], target_size=100, discount=0.5)
-    assert r.qualifies and r.size_adjusted == 0.38
-    assert within_max_spread(r, mid=0.41, max_spread=0.03) and not within_max_spread(r, mid=0.45, max_spread=0.03)
+def test_walk_stops_at_target():
+    # docs: 25,000 at the best with a 20,000 target -> the second level scores zero
+    assert quote_share([(0.50, 25000)], 0.49, 1000, 20000, 0.3) == 0
+    assert score_side([(0.40, 50)], target_size=100, discount=0.5).qualifies is False
+
+
+def test_max_spread_docs_examples():
+    side = lambda p, asks=False: score_side([(p, 1000)], 1000, 0.3, asks=asks)
+    assert book_pays(side(0.49), side(0.51, True), 0.035)
+    assert not book_pays(side(0.49), side(0.57, True), 0.035)
+    assert book_pays(side(0.47), side(0.54, True), 0.035)          # exactly on the limit pays
+    assert not book_pays(side(0.49), score_side([], 1000, 0.3, asks=True), 0.035)
+    assert book_pays(side(0.49), score_side([], 1000, 0.3, asks=True), None)
 
 
 def _m(**kw):

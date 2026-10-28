@@ -1,0 +1,21 @@
+[Unit]
+Description=Polymarket US source watcher (logs only, never trades)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lip
+WorkingDirectory=/opt/kalshi-lip-recorder
+# PMBOT_UA="pmbot you@example.com" (SEC asks for a contact in the User-Agent)
+EnvironmentFile=-/etc/lip/pmbot.env
+ExecStart=/opt/kalshi-lip-recorder/.venv/bin/python -m pmbot.watch --out /var/lib/lip/watch
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lip
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

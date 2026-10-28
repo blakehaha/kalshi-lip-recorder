@@ -1,0 +1,38 @@
+{
+  "sources": [
+    {
+      "type": "edgar",
+      "names": ["Anthropic", "OpenAI", "Anduril", "Discord", "Ramp", "Revolut", "Ripple", "Anysphere",
+                "Applied Intuition", "Brex", "Canva", "Celonis", "Databricks", "Deel", "Epic Games", "Glean",
+                "Ledger", "Mistral AI", "Perplexity", "Rippling", "Stripe", "Vanta", "Waymo"],
+      "events": ["2026ipos", "anthropic", "openai"],
+      "every_s": 60
+    },
+    {
+      "type": "page",
+      "url": "https://arena.ai/leaderboard/text/overall-no-style-control",
+      "events": ["company1-2026-10-31", "company1-2026-12-31", "company1-dur2026", "company1-wk-2026-11-02",
+                 "chinese-arena-ovrall-1", "cmpny-china-1-2026-10-31", "code1-2026-12-31"],
+      "every_s": 30
+    },
+    {
+      "type": "hf",
+      "authors": ["google", "meta-llama", "Qwen", "deepseek-ai", "moonshotai", "zai-org", "xai-org", "openai",
+                  "mistralai"],
+      "events": ["company1-2026-12-31", "chinese-arena-ovrall-1", "xai-grok-5"],
+      "every_s": 120
+    },
+    {
+      "type": "page",
+      "url": "https://www.anthropic.com/news",
+      "events": ["anthropic-claude-6", "anthropic"],
+      "every_s": 60
+    },
+    {
+      "type": "page",
+      "url": "https://openai.com/news/",
+      "events": ["openai-gpt-astra-6pt1", "openai-gpt-7", "openai"],
+      "every_s": 60
+    }
+  ]
+}
