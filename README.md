@@ -16,6 +16,7 @@ This recorder snapshots Kalshi order books for markets in the **Liquidity Incent
 | `analysis/report.py` | Regenerates every table and figure in the write-up. |
 | `data/` | 69,450 snapshots from 2026-09-23 to 2026-09-25 (1.8 MB, zstd Parquet). |
 | `deploy/lip-recorder.service` | A systemd unit. |
+| `pmbot/` | Polymarket US: a watcher that logs resolution-source changes (SEC filings, arena.ai, lab releases) next to market prices, plus a shelved rewards-MM backtest. No order code. See [pmbot/README.md](pmbot/README.md). |
 
 ## Run it
 
