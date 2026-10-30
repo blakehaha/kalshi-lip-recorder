@@ -54,11 +54,14 @@ def program_rate_cents_per_hour(p: dict) -> float:
     return (float(p.get("period_reward") or 0) / 100) / ((end - start) / 3600)  # period_reward is centi-cents
 
 
-def select_programs(programs: list[dict], n: int, mode: str = "top", rng: random.Random | None = None) -> list[dict]:
+def select_programs(programs: list[dict], n: int, mode: str = "top", rng: random.Random | None = None,
+                    prefixes: tuple[str, ...] = ()) -> list[dict]:
     best: dict[str, dict] = {}
     for p in programs:
         t = p.get("market_ticker")
         if not t or (p.get("incentive_type") not in (None, "liquidity")):
+            continue
+        if prefixes and not t.startswith(prefixes):
             continue
         if t not in best or program_rate_cents_per_hour(p) > program_rate_cents_per_hour(best[t]):
             best[t] = p
@@ -122,8 +125,8 @@ def write_sweep(rows: list[dict], out: Path, now: float) -> Path | None:
     return path
 
 
-def sweep(client: KalshiRO, out: Path, n: int, mode: str = "top") -> Path | None:
-    programs = select_programs(client.liquidity_programs(), n, mode)
+def sweep(client: KalshiRO, out: Path, n: int, mode: str = "top", prefixes: tuple[str, ...] = ()) -> Path | None:
+    programs = select_programs(client.liquidity_programs(), n, mode, prefixes=prefixes)
     rows, now = [], time.time()
     for p in programs:
         try:
@@ -142,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--interval", type=float, default=300, help="seconds between sweep starts")
     ap.add_argument("--select", choices=["top", "random"], default="top")
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--prefix", nargs="*", default=[], help="only tickers starting with these, e.g. KXDIESEL")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     client, out = KalshiRO(), Path(a.out)
@@ -150,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         t0 = time.monotonic()
         try:
-            sweep(client, out, a.markets, a.select)
+            sweep(client, out, a.markets, a.select, tuple(a.prefix))
         except Exception as e:
             log.error("sweep failed: %s", e)
         if a.once or stop["now"]:
