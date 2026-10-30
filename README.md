@@ -29,6 +29,19 @@ python -m lip.recorder --out data/live --markets 150 --interval 300
 
 If Kalshi rejects unauthenticated order-book reads, set `KALSHI_KEY_ID` and `KALSHI_PRIVATE_KEY_PATH` (use a read-only key; the client never trades). Keep the PEM outside the repo: `.gitignore` blocks `*.pem`, `*.key` and `.env`.
 
+## BTC fair-value engine (`fv/`)
+
+This prices Kalshi's BTC contracts (KXBTCD above/below, KXBTC range, KXBTC15M) as digital options off Deribit's implied-vol smile and options-implied forward. It adjusts for the 60-second BRTI settlement average and Kalshi's quadratic taker fee. It's read-only, with paper trading only.
+
+```bash
+python -m fv.scanner scan --dry          # live gaps vs Kalshi quotes
+python -m fv.scanner scan --loop 60      # paper-log qualifying gaps
+python -m fv.scanner settle              # grade settled paper entries
+python -m fv.backtest --days 150         # history: real Deribit option trades + Kalshi candles
+```
+
+**Result: the taker strategy failed its pre-registered historical test.** Out of sample it lost −0.82¢ per contract over 241 trades in 33 events. The model's calibration matched the market's (Brier 0.1347 vs 0.1353), with nothing left after fees. Rules and numbers are in [fv/PAPER_TEST.md](fv/PAPER_TEST.md).
+
 ## Schema
 
 There is one row per market per sweep. The column suffix gives the unit: `_e4` = dollars × 10⁴, `_e2` = contracts × 100, `_cents`, `_bps`.
