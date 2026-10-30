@@ -1,4 +1,4 @@
-# Diesel LIP maker test: rules written before results
+# Diesel + shipping-lane LIP maker test: rules written before results
 
 *Written 2026-10-29.*
 
@@ -13,10 +13,32 @@
 
 One snapshot proves nothing, which is why this is a test.
 
+## Shipping lanes (added 2026-10-29)
+
+These are KXHORMUZMAX, KXBABELMANDEBWEEKLY and KXSUEZWEEKLY.
+
+**The recorded data.** In the Sept 23–25 dataset, these are the only non-sports
+series where the subsidy beat a harsh adverse-move proxy. The proxy assumes
+every move of 1¢ or more runs over a full target-size quote. Results:
+- KXHORMUZMAX: no 1¢+ moves at all in 807 snapshots. Net about $32 a day per $1k.
+- KXBABELMANDEBWEEKLY: subsidy 2.1× the proxy.
+- KXSUEZWEEKLY: subsidy 1.1× the proxy.
+
+The proxy also kills KXRT, KXTRUMPAPPROVE, KXTRUMPMENTIONB, the daily state gas
+markets and the NFL yardage ladders.
+
+**Live on 2026-10-29.** Those series run 43 programs. Most pay about $4/hr each,
+and a target-size quote at the touch held 95–99.7% of the score on 3 of the
+Hormuz markets. That's about $100 a day per $1k before fills.
+
+**Risks.**
+- Weekly resolution on published transit data. Pull quotes before each data update.
+- Geopolitical jumps. Pull everything on a headline.
+
 ## Step 1: watch (3 days, $0)
 
 ```bash
-python -m lip.recorder --out data/diesel --prefix KXDIESEL --interval 600
+python -m lip.recorder --out data/watch --prefix KXDIESEL KXHORMUZ KXBABELMANDEB KXSUEZ --interval 600
 ```
 
 Proceed only if at least 3 markets keep share ≥ 60% in at least 70% of
