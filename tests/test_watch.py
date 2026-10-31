@@ -134,3 +134,18 @@ def test_page_link_pattern_fires_per_new_article(monkeypatch):
     (sig,) = s.poll(2)
     assert sig == {"id": "https://www.anthropic.com/news/claude-6",
                    "link": "https://www.anthropic.com/news/claude-6", "text": "Introducing Claude 6"}
+
+
+def test_failed_event_lookup_is_retried(tmp_path):
+    class Flaky(FakeGateway):
+        calls = 0
+
+        def market_slugs(self, event):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise TimeoutError("The read operation timed out")
+            return super().market_slugs(event)
+
+    w = Watcher(Flaky(), [], tmp_path)
+    assert w.slugs(["ev"]) == []
+    assert w.slugs(["ev"]) == ["ev-yes"]

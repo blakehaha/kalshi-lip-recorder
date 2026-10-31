@@ -316,9 +316,9 @@ class Watcher:
             if e not in self.markets:
                 try:
                     self.markets[e] = self.gw.market_slugs(e)
-                except Exception as ex:
+                except Exception as ex:      # not cached: a timeout must not drop the event for good
                     log.warning("event %s: %s", e, ex)
-                    self.markets[e] = []
+                    continue
             out += self.markets[e]
         return out
 
