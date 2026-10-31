@@ -13,7 +13,7 @@
 | Hugging Face new repos by lab | AI model markets | Open-weight launches show up here first |
 | anthropic.com/news (page), openai.com/news/rss.xml | "Claude 6 / GPT-x released" | Resolve on the lab's own release |
 
-Edit `watchlist.json` to add sources. `deploy/pmbot-watch.service` runs the watcher under systemd. Set `PMBOT_UA="pmbot you@example.com"`, because the SEC asks for a contact in the User-Agent.
+Edit `watchlist.json` to add sources. `deploy/setup-pmbot.sh` installs the watcher on a droplet in its own checkout, `/opt/pmbot`, writing to `/var/lib/lip/pmbot`. It never shares `/opt/kalshi-lip-recorder`, because other services switch that folder's branch. Set `PMBOT_UA="pmbot you@example.com"`, because the SEC asks for a contact in the User-Agent.
 
 What the IPO rules mean in practice: a non-EGC filing confidentially (DRS) must file its S-1 publicly at least 15 days before the roadshow starts. No public S-1 means no IPO for at least ~3 weeks. That deadline math prices the "IPO by date X" markets.
 
