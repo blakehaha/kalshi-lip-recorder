@@ -75,7 +75,8 @@
         "anthropic-claude-6",
         "anthropic"
       ],
-      "every_s": 60
+      "every_s": 60,
+      "link_pattern": "^(https://www\\.anthropic\\.com)?/news/[a-z0-9-]+/?$"
     },
     {
       "type": "rss",

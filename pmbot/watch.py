@@ -129,9 +129,11 @@ class EdgarSource(Source):
 
     def items(self) -> dict[str, dict]:
         today = datetime.now(timezone.utc).date()
-        q = {"entityName": self.company, "forms": ",".join(self.forms), "dateRange": "custom",   # startdt is
-             "startdt": (today - timedelta(days=self.lookback_days)).isoformat(),               # ignored without
-             "enddt": (today + timedelta(days=1)).isoformat()}                                  # an enddt
+        # No `forms` param: EFTS's form filter silently dropped Anthropic's 2026-10-26 S-1 while
+        # returning its DRS/As, so filter client-side. startdt is ignored without an enddt.
+        q = {"entityName": self.company, "dateRange": "custom",
+             "startdt": (today - timedelta(days=self.lookback_days)).isoformat(),
+             "enddt": (today + timedelta(days=1)).isoformat()}
         try:
             d = fetch(EFTS, q, ua=self.ua)
         except urllib.error.HTTPError as e:     # EFTS throws the odd 500; one retry
@@ -142,6 +144,8 @@ class EdgarSource(Source):
         out = {}
         for h in d.get("hits", {}).get("hits", []):
             s = h.get("_source", {})
+            if s.get("form") not in self.forms:
+                continue
             out[h["_id"]] = {"company": self.company, "form": s.get("form"), "file_date": s.get("file_date"),
                              "filer": (s.get("display_names") or [""])[0], "adsh": s.get("adsh")}
         return out
@@ -167,13 +171,25 @@ def page_text(html: str) -> str:
 
 
 class PageSource(Source):
-    def __init__(self, url: str, events: list[str], every_s: float = 60):
+    """With link_pattern: one signal per new matching link (e.g. a new article
+    on a news index). Without: fires whenever the page's text changes, which
+    is noisy on pages carrying dates or rotating content."""
+
+    def __init__(self, url: str, events: list[str], every_s: float = 60, link_pattern: str | None = None):
         super().__init__(events, every_s)
-        self.url = url
+        self.url, self.link_re = url, re.compile(link_pattern) if link_pattern else None
         self.name = "page:" + url
 
     def items(self) -> dict[str, dict]:
-        text = page_text(fetch(self.url, raw=True))
+        html = fetch(self.url, raw=True)
+        if self.link_re:
+            out = {}
+            for href, inner in re.findall(r'(?is)<a\b[^>]*?href="([^"]+)"[^>]*>(.*?)</a>', html):
+                if self.link_re.search(href):
+                    link = urllib.parse.urljoin(self.url, href)
+                    out.setdefault(link, {"link": link, "text": page_text(inner)[:200]})
+            return out
+        text = page_text(html)
         h = hashlib.sha256(text.encode()).hexdigest()[:16]
         return {h: {"url": self.url, "chars": len(text), "head": text[:300]}}
 
@@ -266,7 +282,7 @@ def build_sources(cfg: dict) -> list[Source]:
         elif s["type"] == "hf":
             out.append(HFSource(s["authors"], ev, **kw))
         elif s["type"] == "page":
-            out.append(PageSource(s["url"], ev, **kw))
+            out.append(PageSource(s["url"], ev, link_pattern=s.get("link_pattern"), **kw))
         elif s["type"] == "rss":
             out.append(RSSSource(s["url"], ev, **kw))
         elif s["type"] == "arena":

@@ -47,14 +47,15 @@ def test_edgar_source_parses_hits_and_sends_entity_filter(monkeypatch):
 
     def fake(url, params=None, **k):
         seen.update(params)
-        return {"hits": {"hits": [{"_id": "0002130357-26-000014:f.htm", "_source": {
-            "form": "DRS/A", "file_date": "2026-10-09", "display_names": ["Anthropic, PBC  (CIK 0002130357)"],
-            "adsh": "0002130357-26-000014"}}]}}
+        hit = lambda i, form: {"_id": i, "_source": {"form": form, "file_date": "2026-10-26",
+                                                     "display_names": ["Anthropic, PBC  (CIK 0002130357)"]}}
+        return {"hits": {"hits": [hit("s1", "S-1"), hit("drs", "DRS/A"), hit("k", "8-K")]}}
 
     monkeypatch.setattr(watch, "fetch", fake)
     items = EdgarSource("Anthropic", ["anthropic"]).items()
-    assert seen["entityName"] == "Anthropic" and "enddt" in seen and "EFFECT" in seen["forms"]
-    assert items["0002130357-26-000014:f.htm"]["form"] == "DRS/A"
+    # no server-side form filter (it dropped the real S-1); IPO forms kept client-side
+    assert seen["entityName"] == "Anthropic" and "enddt" in seen and "forms" not in seen
+    assert sorted(items) == ["drs", "s1"] and items["s1"]["form"] == "S-1"
 
 
 class FakeGateway:
@@ -114,3 +115,20 @@ def test_arena_fires_only_on_leader_change(monkeypatch):
     assert s.poll(2) == []              # same leader
     (sig,) = s.poll(3)
     assert sig["leader"] == "Anthropic|claude-6" and sig["gap_to_2nd"] == 19.0
+
+
+def test_page_link_pattern_fires_per_new_article(monkeypatch):
+    nav = '<a href="/news">News</a><a href="/research">Research</a>'
+    pages = iter([
+        f'{nav}<span>Oct 29</span><a href="/news/claude-opus-5-5"><h3>Opus 5.5</h3></a>',
+        f'{nav}<span>Oct 30</span><a href="/news/claude-opus-5-5"><h3>Opus 5.5</h3></a>',   # date changes only
+        f'{nav}<a class="card" href="https://www.anthropic.com/news/claude-6"><h3>Introducing Claude 6</h3></a>'
+        '<a href="/news/claude-opus-5-5">Opus 5.5</a>',
+    ])
+    monkeypatch.setattr(watch, "fetch", lambda *a, **k: next(pages))
+    s = PageSource("https://www.anthropic.com/news", ["ev"], every_s=0,
+                   link_pattern=r"^(https://www\.anthropic\.com)?/news/[a-z0-9-]+/?$")
+    assert s.poll(0) == [] and s.poll(1) == []
+    (sig,) = s.poll(2)
+    assert sig == {"id": "https://www.anthropic.com/news/claude-6",
+                   "link": "https://www.anthropic.com/news/claude-6", "text": "Introducing Claude 6"}
