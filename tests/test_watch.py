@@ -105,16 +105,18 @@ def test_arena_fires_only_on_leader_change(monkeypatch):
         [("Google", "gemini-3.5-pro", 1, 1511.0), ("Anthropic", "claude-opus-5-5", 2, 1500.0)],
         [("Anthropic", "claude-6", 1, 1530.0), ("Google", "gemini-3.5-pro", 2, 1511.0)],
     ])
+    extra = {"vote_count": [1106, 24611], "rating_lower": [1512.0, 1506.0], "rating_upper": [1548.0, 1516.0]}
     modified = iter(["d1", "d1", "d2", "d3"])
     monkeypatch.setattr(watch, "fetch", lambda *a, **k: {"lastModified": next(modified)})
     s = ArenaHFSource(["company1-2026-12-31"], every_s=0)
     s.board = lambda: pd.DataFrame(next(boards), columns=["organization", "model_name", "rank", "rating"]).assign(
-        leaderboard_publish_date="2026-10-28").sort_values(["rank", "rating"], ascending=[True, False])
+        leaderboard_publish_date="2026-10-28", **extra).sort_values(["rank", "rating"], ascending=[True, False])
     assert s.poll(0) == []              # primes: Google leads (rank tie broken by score)
     assert s.poll(1) == []              # dataset unchanged, board not even fetched
     assert s.poll(2) == []              # same leader
     (sig,) = s.poll(3)
     assert sig["leader"] == "Anthropic|claude-6" and sig["gap_to_2nd"] == 19.0
+    assert sig["leader_votes"] == 1106 and sig["leader_ci"] == 18.0
 
 
 def test_page_link_pattern_fires_per_new_article(monkeypatch):

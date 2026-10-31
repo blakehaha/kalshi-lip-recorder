@@ -265,6 +265,12 @@ class ArenaHFSource(Source):
                 "published": str(top.iloc[0]["leaderboard_publish_date"]),
                 "gap_to_2nd": float(top.iloc[0]["rating"] - top.iloc[1]["rating"]) if len(top) > 1 else None,
                 "top3": [f"{r.organization}|{r.model_name}|{r.rating:.1f}" for r in top.itertuples()]}
+        # a new #1 is often "preliminary": few votes and a wide interval that tends to shrink downward
+        lead = top.iloc[0]
+        if "vote_count" in top:
+            item["leader_votes"] = int(lead["vote_count"])
+        if "rating_lower" in top and "rating_upper" in top:
+            item["leader_ci"] = round(float(lead["rating_upper"] - lead["rating_lower"]) / 2, 1)
         prev, self._leader = self._leader, leader
         if prev is None:
             log.info("%s primed: %s", self.name, item["top3"])
