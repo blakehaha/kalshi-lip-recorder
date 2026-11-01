@@ -14,6 +14,7 @@ This recorder snapshots Kalshi order books for markets in the **Liquidity Incent
 | `lip/client.py` | A read-only REST client. It can only send GET (enforced and tested). Signing (RSA-PSS) is optional. |
 | `lip/recorder.py` | The sweep loop: active programs → top N by reward rate → order books → one Parquet file per sweep. |
 | `analysis/report.py` | Regenerates every table and figure in the write-up. |
+| `analysis/paper_quote.py` | Paper-quotes the LIP: subsidy minus inferred adverse fills, train/test grid, and the pre-registered H1 rule. Results: [PAPER_QUOTE.md](PAPER_QUOTE.md). |
 | `data/` | 69,450 snapshots from 2026-09-23 to 2026-09-25 (1.8 MB, zstd Parquet). |
 | `deploy/lip-recorder.service` | A systemd unit. |
 
@@ -23,6 +24,8 @@ This recorder snapshots Kalshi order books for markets in the **Liquidity Incent
 pip install -r requirements.txt
 python -m pytest -q
 python analysis/report.py                          # rebuild the write-up numbers from data/
+python analysis/paper_quote.py                     # paper-quote backtest (PAPER_QUOTE.md)
+python analysis/paper_quote.py data/live --rule h1 # forward test on new recordings
 python -m lip.recorder --once --out data/live      # one live sweep
 python -m lip.recorder --out data/live --markets 150 --interval 300
 ```
