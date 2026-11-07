@@ -47,6 +47,7 @@ The Polymarket US Liquidity Incentive Program pays for resting size near the top
 | `strategy.py` | `evaluate()` filters one book into a quote or a list of skip reasons. `allocate()` applies capital caps (never shrinks a quote below target, since that earns nothing). `killed()` is the daily-loss kill switch. |
 | `auth.py` | Ed25519 request signer (`X-PM-*` headers, `timestamp + METHOD + path`), checked against the docs. |
 | `watch.py`, `watchlist.json` | The watcher above. |
+| `leadtime.py` | Reads the watcher's logs: for each signal, the linked market's mid an hour before, at the signal and up to 4 hours after; then every big move and whether a signal preceded it. Run it on the droplet: `.venv/bin/python -m pmbot.leadtime /var/lib/lip/pmbot`. |
 | `backtest.py` | The table above. |
 
 ## Network
