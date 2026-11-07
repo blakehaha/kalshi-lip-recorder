@@ -145,6 +145,27 @@ def big_moves(prices, cents: float, window_min: int = 60) -> list[dict]:
     return out
 
 
+def show_book(d: Path, slug: str, frm: str, to: str, year: int) -> None:
+    """Raw bid/ask and resting size for one market between two UTC times ('MM-DD HH:MM')."""
+    parse = lambda x: datetime.strptime(f"{year}-{x}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp()
+    lo, hi = parse(frm), parse(to)
+    last = None
+    print(f"{slug}  {frm} -> {to} UTC   (bid x shares | ask x shares; rows only when the book changes)")
+    for f in sorted(glob.glob(str(d / "prices-*.jsonl"))):
+        with open(f) as fh:
+            for line in fh:
+                if slug not in line:
+                    continue
+                r = json.loads(line)
+                if r["slug"] != slug or not lo <= r["ts"] <= hi:
+                    continue
+                row = (r.get("bid"), r.get("bid_shares"), r.get("ask"), r.get("ask_shares"))
+                if row != last:
+                    print(f"{fmt_t(r['ts'])}  {c(row[0])} x {str(row[1]):>7s} | {c(row[2])} x {str(row[3]):>7s}"
+                          f"   traded {r.get('traded')}")
+                    last = row
+
+
 def fmt_t(t: float) -> str:
     return datetime.fromtimestamp(t, timezone.utc).strftime("%m-%d %H:%M")
 
@@ -159,10 +180,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--move", type=float, default=5.0, help="big-move threshold in cents (default 5)")
     ap.add_argument("--min-signal-move", type=float, default=2.0, help="list signals whose markets moved this much")
     ap.add_argument("--max-spread", type=float, default=10.0, help="ignore books wider than this, cents (default 10)")
+    ap.add_argument("--show", nargs=3, metavar=("SLUG", "FROM", "TO"),
+                    help="print one market's raw book between two UTC times, e.g. --show <slug> '11-05 18:30' '11-05 20:00'")
+    ap.add_argument("--year", type=int, default=datetime.now(timezone.utc).year)
     a = ap.parse_args(argv)
     d = Path(a.dir)
     global MAX_SPREAD
     MAX_SPREAD = a.max_spread / 100
+    if a.show:
+        show_book(d, *a.show, year=a.year)
+        return 0
     signals = [json.loads(line) for line in open(d / "signals.jsonl")] if (d / "signals.jsonl").exists() else []
     prices = load_prices(d)
     if not prices:

@@ -63,3 +63,14 @@ def test_baseline_column(tmp_path, capsys):
     out = capsys.readouterr().out
     line = next(x for x in out.splitlines() if x.startswith("edgar"))
     assert line.split()[1:5] == ["1", "1", "1", "0"] and "100%" in line
+
+
+def test_show_book_prints_changes_only(tmp_path, capsys):
+    from datetime import datetime, timezone
+    t = datetime(2026, 11, 5, 19, 0, tzinfo=timezone.utc).timestamp()
+    rows = [{"ts": t + 60 * i, "slug": "m", "bid": 0.97 if i < 3 else 0.33, "bid_shares": "12",
+             "ask": 0.98, "ask_shares": "40", "traded": "100"} for i in range(6)]
+    write(tmp_path, rows, [])
+    assert main([str(tmp_path), "--show", "m", "11-05 18:59", "11-05 19:10", "--year", "2026"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == 3 and "33.0 x      12" in out[2]
