@@ -1,0 +1,22 @@
+[Unit]
+Description=Polymarket US source watcher (logs only, never trades)
+# Own checkout (/opt/pmbot) and data dir: /opt/kalshi-lip-recorder is switched between branches by other services
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lip
+WorkingDirectory=/opt/pmbot
+# PMBOT_UA="pmbot you@example.com" (SEC asks for a contact in the User-Agent)
+EnvironmentFile=-/etc/lip/pmbot.env
+ExecStart=/opt/pmbot/.venv/bin/python -m pmbot.watch --out /var/lib/lip/pmbot
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lip
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
