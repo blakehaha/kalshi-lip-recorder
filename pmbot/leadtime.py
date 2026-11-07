@@ -12,6 +12,9 @@ Then the reverse: every big move (>= --move cents within an hour) in a watched
 market, and whether any signal for that market came in the 12 hours before it.
 Big moves with no signal are information the watcher isn't seeing.
 
+Prices count only when both sides are quoted within --max-spread; empty or
+gaping books are skipped, not treated as 0 or 100.
+
 Reads the logs line by line; needs about 200 MB on the droplet.
 """
 from __future__ import annotations
@@ -28,10 +31,16 @@ from pathlib import Path
 AFTER_MIN = (5, 15, 60, 240)
 
 
-def mid(bid, ask) -> float | None:
-    if bid is None and ask is None:
+MAX_SPREAD = 0.10
+
+
+def mid(bid, ask, max_spread: float | None = None) -> float | None:
+    """A price only from a two-sided book. A missing side or a gaping spread is a book
+    being emptied (all the 1c offers pulled at once), not a trade: counting it turned
+    dead markets into fake 0.5c -> 49.5c "moves"."""
+    if bid is None or ask is None or ask - bid > (MAX_SPREAD if max_spread is None else max_spread):
         return None
-    return ((bid or 0.0) + (ask if ask is not None else 1.0)) / 2
+    return (bid + ask) / 2
 
 
 def load_prices(d: Path) -> dict[str, tuple[list[float], list[float]]]:
@@ -65,6 +74,18 @@ def at(series, t: float, tol_s: float = 150) -> float | None:
         if 0 <= j < len(ts) and abs(ts[j] - t) <= tol_s and (best is None or abs(ts[j] - t) < abs(ts[best] - t)):
             best = j
     return ms[best] if best is not None else None
+
+
+def base_rate(ser, thr: float, horizon_min: int = 240, step: int = 15) -> tuple[int, int]:
+    """(windows that moved >= thr, windows checked) over every step-th snapshot."""
+    ts, ms = ser
+    hit = n = 0
+    for i in range(0, len(ts), step):
+        later = at(ser, ts[i] + 60 * horizon_min)
+        if later is not None:
+            n += 1
+            hit += abs(later - ms[i]) >= thr
+    return hit, n
 
 
 def describe(sig: dict) -> str:
@@ -137,8 +158,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("dir", nargs="?", default="data/watch")
     ap.add_argument("--move", type=float, default=5.0, help="big-move threshold in cents (default 5)")
     ap.add_argument("--min-signal-move", type=float, default=2.0, help="list signals whose markets moved this much")
+    ap.add_argument("--max-spread", type=float, default=10.0, help="ignore books wider than this, cents (default 10)")
     a = ap.parse_args(argv)
     d = Path(a.dir)
+    global MAX_SPREAD
+    MAX_SPREAD = a.max_spread / 100
     signals = [json.loads(line) for line in open(d / "signals.jsonl")] if (d / "signals.jsonl").exists() else []
     prices = load_prices(d)
     if not prices:
@@ -151,12 +175,20 @@ def main(argv: list[str] | None = None) -> int:
     by_src = defaultdict(list)
     for r in rows:
         by_src[r["source"]].append(r)
-    print("## Signals by source (largest linked-market move, cents)")
-    print(f"{'source':8s} {'n':>4s} {'moved>=2c':>9s} {'mostly after':>12s} {'mostly before':>13s}")
+    thr = a.min_signal_move / 100
+    print(f"## Signals by source. 'random' = share of random 4h windows in the same markets that moved >= "
+          f"{a.min_signal_move:g}c anyway; a source only matters if 'after' beats it.")
+    print(f"{'source':8s} {'n':>4s} {'priced':>6s} {'after':>6s} {'before':>6s} {'after %':>7s} {'random %':>8s}")
     for src, rs in sorted(by_src.items()):
-        moved = [r for r in rs if r["size"] >= a.min_signal_move / 100]
-        after = [r for r in moved if r.get("post", 0) > r.get("pre", 0)]
-        print(f"{src:8s} {len(rs):4d} {len(moved):9d} {len(after):12d} {len(moved) - len(after):13d}")
+        priced = [r for r in rs if "m0" in r]
+        after = [r for r in priced if r["post"] >= thr and r["post"] > r["pre"]]
+        before = [r for r in priced if r["pre"] >= thr and r["pre"] >= r["post"]]
+        slugs = {b["slug"] for s in signals if s["source"].split(":")[0] == src for b in s.get("books", [])}
+        hits = [base_rate(prices[x], thr) for x in slugs if x in prices]
+        h, n = sum(x for x, _ in hits), sum(y for _, y in hits)
+        pa = f"{100 * len(after) / len(priced):6.0f}%" if priced else "     ."
+        pr = f"{100 * h / n:7.0f}%" if n else "      ."
+        print(f"{src:8s} {len(rs):4d} {len(priced):6d} {len(after):6d} {len(before):6d} {pa} {pr}")
 
     print(f"\n## Signals whose markets moved >= {a.min_signal_move:g}c  (mid in cents: -60m | signal | +5 +15 +60 +240m)")
     for r in sorted(rows, key=lambda r: r["ts"]):
