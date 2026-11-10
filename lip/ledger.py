@@ -272,7 +272,15 @@ def fetch(client: KalshiRO, cache: Path, min_ts: int | None, horizon_s: float, t
     raw: dict[str, dict] = {}
     # fills before the historical cutoff only exist under /historical; a failure on the live list is fatal
     old = _try(lambda: _paged(client, "/historical/fills", "fills", min_ts=min_ts, ticker=tk), [])
-    for d in old + _paged(client, "/portfolio/fills", "fills", min_ts=min_ts, ticker=tk):
+    try:
+        live = _paged(client, "/portfolio/fills", "fills", min_ts=min_ts, ticker=tk)
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise SystemExit("Kalshi rejected the signature (HTTP 401). KALSHI_KEY_ID must be the ID of the key "
+                             "whose private key is at KALSHI_PRIVATE_KEY_PATH, the key must not be deleted, and "
+                             "this computer's clock must be right.") from None
+        raise
+    for d in old + live:
         raw[str(d.get("fill_id") or d.get("trade_id"))] = d
     one = tickers[0] if tickers and len(tickers) == 1 else None  # settlements filter takes one ticker
     settlements = _paged(client, "/portfolio/settlements", "settlements", min_ts=min_ts, ticker=one)

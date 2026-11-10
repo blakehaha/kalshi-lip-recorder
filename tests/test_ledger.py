@@ -192,3 +192,9 @@ def test_fetch_requires_signing(tmp_path, monkeypatch):
     monkeypatch.delenv("KALSHI_KEY_ID", raising=False)
     with pytest.raises(SystemExit, match="KALSHI_KEY_ID"):
         fetch(KalshiRO(key_id=""), tmp_path, None, 300, None)
+
+
+def test_fetch_explains_401(signed, tmp_path, monkeypatch):
+    monkeypatch.setattr(_Fake, "do_GET", lambda self: self._send(401, {}))
+    with pytest.raises(SystemExit, match="KALSHI_KEY_ID must be the ID"):
+        fetch(KalshiRO(), tmp_path, None, 300, None)
