@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from lip.client import KalshiRO
-from lip.ledger import (Fill, book_mid, fetch, ledger, load_rewards, main, markouts, mid_at, candle_mids,
+from lip.ledger import (Fill, book_mid, build, fetch, ledger, load_rewards, main, markouts, mid_at, candle_mids,
                         normalize_fill, report, settlement_value)
 
 T0 = 1_759_000_000  # 2025-09-27 19:06:40 UTC, on a minute boundary
@@ -67,10 +67,18 @@ def test_ledger_round_trip_open_settled_and_unmarked():
     assert "| **Net** | **$2.57** |" in md and "| Taker fills (crossed the spread) | 1 |" in md
 
 
-def test_settlement_fee_counts():
-    fills = [normalize_fill(fp_fill("c1", "C", "bid", 10, 0.90))]
-    r = ledger(fills, {"C": 1.0}, {}, {}, {}, {"C": 0.05})[0]
-    assert r["fees"] == pytest.approx(0.05) and r["trading_pnl"] == pytest.approx(0.95)
+def test_settlement_fee_cost_not_double_counted(tmp_path):
+    # live account, KXRT-GOD-80-like: the settlement's fee_cost equals the fills' fees, and Kalshi's
+    # fees_paid is the fills' fees once. Trading P&L must equal Kalshi realized_pnl - fees_paid.
+    cache = tmp_path
+    (cache / "fills.json").write_text(json.dumps([fp_fill("c1", "C", "bid", 10, 0.90, fee="0.16", taker=True)]))
+    (cache / "settlements.json").write_text(json.dumps([{"ticker": "C", "market_result": "yes", "fee_cost": "0.16"}]))
+    (cache / "marks.json").write_text("{}")
+    (cache / "positions.json").write_text(json.dumps([{"ticker": "C", "fees_paid_dollars": "0.16",
+                                                       "realized_pnl_dollars": "1.00"}]))
+    r = build(cache, None, 300)[0][0]
+    assert r["fees"] == pytest.approx(r["kalshi_fees"]) == pytest.approx(0.16)
+    assert r["trading_pnl"] == pytest.approx(r["kalshi_realized"] - r["kalshi_fees"])
 
 
 def candle(end, bid, ask):

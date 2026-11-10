@@ -12,7 +12,8 @@ candlesticks:
   markout  edge + adverse                                  P&L of the fill at the horizon
 
 The last column repeats Kalshi's own fees_paid / realized_pnl from
-/portfolio/positions. If the fees disagree, trust Kalshi and find out why.
+/portfolio/positions. Kalshi's realized_pnl leaves fees out, so on a settled
+market Trading P&L = realized - fees. If they disagree, trust Kalshi.
 
 Kalshi's API has no per-account reward endpoint, so LIP payouts come from a CSV
 you copy out of the app: date,ticker,amount_dollars[,note]. A blank ticker counts
@@ -154,10 +155,12 @@ def load_rewards(path: str | Path | None) -> dict[str, float]:
 
 
 def ledger(fills: list[Fill], settled: dict[str, float], marks: dict[str, float],
-           rewards: dict[str, float], marks_at: dict[str, tuple[float, float]],
-           settle_fees: dict[str, float] | None = None) -> list[dict]:
-    """One row per market. P&L is None when a position is open and has no mark."""
-    settle_fees = settle_fees or {}
+           rewards: dict[str, float], marks_at: dict[str, tuple[float, float]]) -> list[dict]:
+    """One row per market. P&L is None when a position is open and has no mark.
+
+    Fees come from the fills only. A settlement's fee_cost repeats the trading fees already
+    charged on that market's fills; counting both doubled every market's fees against
+    Kalshi's fees_paid (checked on a live account, 2026-11-10)."""
     by: dict[str, list[Fill]] = defaultdict(list)
     for f in fills:
         by[f.ticker].append(f)
@@ -165,7 +168,7 @@ def ledger(fills: list[Fill], settled: dict[str, float], marks: dict[str, float]
     for t in sorted(set(by) | {k for k in rewards if k}):
         fs = by.get(t, [])
         pos = sum(f.qty for f in fs)
-        fees = sum(f.fee for f in fs) + settle_fees.get(t, 0.0)
+        fees = sum(f.fee for f in fs)
         cash = sum(-f.qty * f.yes_price for f in fs) - fees
         mark = settled.get(t, marks.get(t))
         trading = cash + pos * mark if mark is not None else (cash if abs(pos) < 1e-9 else None)
@@ -313,7 +316,6 @@ def build(cache: Path, rewards_path: str | None, horizon_s: float, tickers: list
     fills = [f for f in fills if (not tickers or f.ticker in tickers) and (min_ts is None or f.ts >= min_ts)]
     sts = json.loads((cache / "settlements.json").read_text())
     settled = {s["ticker"]: v for s in sts if (v := settlement_value(s)) is not None}
-    settle_fees = {s["ticker"]: float(s.get("fee_cost") or 0) for s in sts}
     marks = json.loads((cache / "marks.json").read_text())
     candles = json.loads((cache / "candles.json").read_text()) if (cache / "candles.json").exists() else {}
     rewards = load_rewards(rewards_path)
@@ -321,7 +323,7 @@ def build(cache: Path, rewards_path: str | None, horizon_s: float, tickers: list
         rewards = defaultdict(float, {k: v for k, v in rewards.items() if k in tickers or k == ""})
     mk = markouts(fills, candles, horizon_s)
     unattributed = rewards.pop("", 0.0)
-    rows = ledger(fills, settled, marks, rewards, mk, settle_fees)
+    rows = ledger(fills, settled, marks, rewards, mk)
     pos_file = cache / "positions.json"
     kalshi = {q["ticker"]: q for q in (json.loads(pos_file.read_text()) if pos_file.exists() else [])}
     for r in rows:
